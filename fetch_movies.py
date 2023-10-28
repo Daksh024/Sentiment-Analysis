@@ -1,21 +1,21 @@
-import tkinter as tk
 import requests
 from bs4 import BeautifulSoup
+import matplotlib.pyplot as plt
+from collections import Counter
+import tkinter as tk
+from tkinter import ttk, Label
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 review_dict = {}
 
-# Function to fetch and display all movie names from 2023
 def fetch_all_movie_names():
     imdb_url = "https://www.imdb.com/list/ls565461384/"
-    response = requests.get(imdb_url)
+    try:
+        response = requests.get(imdb_url)
+        response.raise_for_status()
 
-    if response.status_code == 200:
         soup = BeautifulSoup(response.text, 'html.parser')
-
-        # Find all the movie titles and links
         movies = soup.find_all('h3', class_='lister-item-header')
-
-        # Extract and print the titles and links
         for movie in movies:
             title = movie.a.text
             link = "https://www.imdb.com" + movie.a['href'] + 'reviews/'
@@ -23,17 +23,18 @@ def fetch_all_movie_names():
                 title:link
             })
 
-        movie_list.delete(0, tk.END)  # Clear the current movie list
+        movie_list.delete(0, tk.END)
         for movie_name in review_dict.keys():
             movie_list.insert(tk.END, movie_name)
 
-# Function to enable analysis button when a movie is selected
+    except requests.RequestException as e:
+        show_error("Error fetching movie names: " + str(e))
+
 def enable_analysis_button(event):
     selected_movie = movie_list.get(movie_list.curselection())
     analysis_button.config(state=tk.NORMAL)
     analysis_button.config(command=lambda: analyze_movie(selected_movie))
 
-# Function to perform analysis for the selected movie
 def analyze_movie(movie_name):
     print(movie_name)
     print("Analysing Movie")
@@ -41,12 +42,10 @@ def analyze_movie(movie_name):
     import pickle
 
     import pandas as pd
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-    from matplotlib.figure import Figure    
+    
+    import seaborn as sns  
 
-    from train import model_data
+    # from train import model_data
 
     # le, tfidf = model_data()
 
@@ -103,39 +102,68 @@ def analyze_movie(movie_name):
     plt.title('Prediction Distribution')
     plt.show()
 
-    # Create a Tkinter canvas for Matplotlib plot
+def get_movie_genres():
+    try:
+        url = "https://www.imdb.com/search/title/?languages=hi&year=2023,2023"
+        response = requests.get(url)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, "html.parser")
 
-    # analysis_window = tk.Toplevel(main_window)
-    # canvas = FigureCanvasTkAgg(fig, master=analysis_window)
-    # canvas_widget = canvas.get_tk_widget()
-    # canvas_widget.pack()
+        genres = []
+        for item in soup.find_all("div", class_="lister-item-content"):
+            genre_tag = item.find("span", class_="genre")
+            if genre_tag:
+                genre_list = genre_tag.text.strip().split(',')
+                genres.extend([g.strip() for g in genre_list])
 
+        return Counter(genres)
 
-    # analysis_window.title(f"Analysis for {movie_name}")
-    # analysis_label = tk.Label(analysis_window, text=f"Perform analysis for {movie_name}")
-    # analysis_label.pack()
+    except requests.RequestException as e:
+        show_error("Connection Error: " + str(e))
+        return Counter()
 
-# Create the main tkinter window with a custom geometry
+def show_error(message):
+    error_label = Label(main_window, text=message, fg="red")
+    error_label.pack(pady=10)
+    main_window.after(5000, error_label.destroy)
+
+def plot_genre_graph():
+    genre_count = get_movie_genres()
+    if not genre_count:
+        return
+
+    genres = list(genre_count.keys())
+    counts = list(genre_count.values())
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.bar(genres, counts, color='blue')
+    ax.set_ylabel('Number of Movies')
+    ax.set_xlabel('Genre')
+    ax.set_title('2023 Hindi Movies by Genre on IMDb')
+    plt.xticks(rotation=45)
+
+    canvas = FigureCanvasTkAgg(fig, master=main_window)
+    canvas.draw()
+    canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
 main_window = tk.Tk()
-main_window.title("Movies from 2023")
-main_window.geometry("600x400")  # Set the window size (width x height)
+main_window.title("Indian Movies from 2023")
+main_window.geometry("600x400")
 
-# Create a frame to hold the listbox and place it on the left
 frame = tk.Frame(main_window)
 frame.pack(side=tk.LEFT, fill=tk.Y)
 
-# Create a listbox to display movie names
-movie_list = tk.Listbox(frame,width=50)
+movie_list = tk.Listbox(frame, width=50)
 movie_list.pack(fill=tk.BOTH, expand=True)
-movie_list.bind("<<ListboxSelect>>", enable_analysis_button)  # Bind the selection event
+movie_list.bind("<<ListboxSelect>>", enable_analysis_button)
 
-# Create a button to fetch and display all movie names from 2023
 fetch_button = tk.Button(main_window, text="Fetch All Movie Names", command=fetch_all_movie_names)
 fetch_button.pack()
 
-# Create a button for analysis (initially disabled)
 analysis_button = tk.Button(main_window, text="Analyze", state=tk.DISABLED)
 analysis_button.pack()
 
-# Start the tkinter main loop
+genre_graph_button = tk.Button(main_window, text="Plot Genre Graph", command=plot_genre_graph)
+genre_graph_button.pack()
+
 main_window.mainloop()
